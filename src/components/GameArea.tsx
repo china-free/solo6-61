@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useGameStore } from '@/store/useGameStore';
 import { getTimeCategory } from '@/utils/stats';
 import { MODE_CONFIG } from '@/types/game';
@@ -11,26 +11,44 @@ export default function GameArea() {
     lastPercentile,
     currentSession,
     distractionPhase,
+    isProcessing,
     startGame,
     handleUserResponse,
     resetGame
   } = useGameStore();
 
+  const lastActionRef = useRef<number>(0);
+  const DEBOUNCE_MS = 50;
+
+  const handleAction = useCallback(() => {
+    const now = Date.now();
+    if (now - lastActionRef.current < DEBOUNCE_MS) {
+      return;
+    }
+    lastActionRef.current = now;
+
+    if (gameState === 'idle' || gameState === 'result' || gameState === 'tooEarly') {
+      startGame();
+    } else if ((gameState === 'waiting' || gameState === 'ready') && isProcessing) {
+      handleUserResponse();
+    }
+  }, [gameState, isProcessing, startGame, handleUserResponse]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         e.preventDefault();
-        if (gameState === 'idle' || gameState === 'result' || gameState === 'tooEarly') {
-          startGame();
-        } else if (gameState === 'waiting' || gameState === 'ready') {
-          handleUserResponse();
-        }
+        handleAction();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, startGame, handleUserResponse]);
+  }, [handleAction]);
+
+  const handleClick = useCallback(() => {
+    handleAction();
+  }, [handleAction]);
 
   const getAreaStyles = () => {
     switch (gameState) {
@@ -63,11 +81,12 @@ export default function GameArea() {
     }
   };
 
-  const handleClick = () => {
-    if (gameState === 'idle' || gameState === 'result' || gameState === 'tooEarly') {
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (gameState === 'idle') {
       startGame();
-    } else if (gameState === 'waiting' || gameState === 'ready') {
-      handleUserResponse();
+    } else {
+      resetGame();
     }
   };
 
@@ -92,6 +111,7 @@ export default function GameArea() {
                 fontFamily: "'Orbitron', sans-serif",
                 boxShadow: '0 0 40px rgba(0, 212, 255, 0.4)'
               }}
+              onClick={handleButtonClick}
             >
               点击开始
             </button>
@@ -144,7 +164,7 @@ export default function GameArea() {
             <button
               className="px-8 py-4 bg-red-500/20 border-2 border-red-400 text-red-300 text-xl font-bold rounded-xl hover:bg-red-500/30 transition-all"
               style={{ fontFamily: "'Orbitron', sans-serif" }}
-              onClick={resetGame}
+              onClick={handleButtonClick}
             >
               重新开始
             </button>
@@ -237,7 +257,7 @@ export default function GameArea() {
                 fontFamily: "'Orbitron', sans-serif",
                 boxShadow: '0 0 30px rgba(0, 212, 255, 0.4)'
               }}
-              onClick={resetGame}
+              onClick={handleButtonClick}
             >
               再来一次
             </button>

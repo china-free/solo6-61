@@ -12,6 +12,24 @@ const defaultHistory: HistoryRecord = {
   allResults: []
 };
 
+const activeTimers: Set<number> = new Set();
+
+function safeSetTimeout(callback: () => void, delay: number): number {
+  const timerId = window.setTimeout(() => {
+    activeTimers.delete(timerId);
+    callback();
+  }, delay);
+  activeTimers.add(timerId);
+  return timerId;
+}
+
+function clearAllTimers() {
+  activeTimers.forEach((timerId) => {
+    window.clearTimeout(timerId);
+  });
+  activeTimers.clear();
+}
+
 interface GameStore {
   gameState: GameState;
   gameMode: GameMode;
@@ -21,6 +39,7 @@ interface GameStore {
   history: HistoryRecord;
   distractionPhase: number;
   startTime: number;
+  isProcessing: boolean;
 
   setGameMode: (mode: GameMode) => void;
   startGame: () => void;
@@ -40,6 +59,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   history: defaultHistory,
   distractionPhase: 0,
   startTime: 0,
+  isProcessing: false,
 
   loadHistory: () => {
     try {
@@ -92,7 +112,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   startGame: () => {
-    const { gameMode } = get();
+    const { gameMode, isProcessing } = get();
+
+    if (isProcessing) {
+      return;
+    }
+
+    clearAllTimers();
+
     const config = MODE_CONFIG[gameMode];
 
     const session: GameSession = {
@@ -107,7 +134,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       currentSession: session,
       lastResult: null,
       lastPercentile: null,
-      distractionPhase: 0
+      distractionPhase: 0,
+      isProcessing: true
     });
 
     if (gameMode === 'distraction') {
@@ -118,14 +146,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   handleUserResponse: () => {
-    const { gameState, startTime, currentSession, gameMode } = get();
+    const { gameState, startTime, currentSession, gameMode, isProcessing } = get();
+
+    if (!isProcessing) {
+      return;
+    }
 
     if (gameState === 'waiting') {
-      set({ gameState: 'tooEarly' });
+      clearAllTimers();
+      set({
+        gameState: 'tooEarly',
+        isProcessing: false,
+        distractionPhase: 0
+      });
       return;
     }
 
     if (gameState === 'ready') {
+      clearAllTimers();
       const reactionTime = Math.round(performance.now() - startTime);
       const percentile = calculatePercentile(reactionTime);
 
@@ -150,7 +188,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           currentSession: {
             ...currentSession,
             results: newResults
-          }
+          },
+          isProcessing: false
         });
       } else {
         set({
@@ -164,7 +203,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
           gameState: 'waiting'
         });
 
-        setTimeout(() => {
+        safeSetTimeout(() => {
+          if (get().gameState !== 'waiting') {
+            return;
+          }
           if (get().gameMode === 'distraction') {
             runDistractionSequence();
           } else {
@@ -176,12 +218,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   resetGame: () => {
+    clearAllTimers();
     set({
       gameState: 'idle',
       currentSession: null,
       lastResult: null,
       lastPercentile: null,
-      distractionPhase: 0
+      distractionPhase: 0,
+      isProcessing: false
     });
   }
 }));
@@ -189,8 +233,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 function scheduleGreen() {
   const delay = 1000 + Math.random() * 4000;
 
-  setTimeout(() => {
-    if (useGameStore.getState().gameState === 'waiting') {
+  safeSetTimeout(() => {
+    const state = useGameStore.getState();
+    if (state.gameState === 'waiting' && state.isProcessing) {
       useGameStore.setState({
         gameState: 'ready',
         startTime: performance.now()
@@ -202,11 +247,23 @@ function scheduleGreen() {
 function runDistractionSequence() {
   const blinkCount = 3 + Math.floor(Math.random() * 3);
   let currentBlink = 0;
+  let cancelled = false;
+
+  const checkAndGetState = () => {
+    const state = useGameStore.getState();
+    if (state.gameState !== 'waiting' || !state.isProcessing) {
+      cancelled = true;
+      return null;
+    }
+    return state;
+  };
 
   const blink = () => {
-    if (useGameStore.getState().gameState !== 'waiting') return;
+    if (cancelled) return;
+    if (!checkAndGetState()) return;
 
     if (currentBlink >= blinkCount) {
+      if (!checkAndGetState()) return;
       useGameStore.setState({
         gameState: 'ready',
         startTime: performance.now(),
@@ -218,11 +275,18 @@ function runDistractionSequence() {
     currentBlink++;
     useGameStore.setState({ distractionPhase: currentBlink % 2 === 1 ? 1 : 2 });
 
-    setTimeout(() => {
+    safeSetTimeout(() => {
+      if (cancelled) return;
+      if (!checkAndGetState()) return;
+
       useGameStore.setState({ distractionPhase: 0 });
-      setTimeout(blink, 150 + Math.random() * 200);
+      safeSetTimeout(() => {
+        if (!cancelled) {
+          blink();
+        }
+      }, 150 + Math.random() * 200);
     }, 100 + Math.random() * 100);
   };
 
-  setTimeout(blink, 500 + Math.random() * 1000);
+  safeSetTimeout(blink, 500 + Math.random() * 1000);
 }
