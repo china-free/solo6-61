@@ -1,12 +1,11 @@
 import { Trophy, Zap, Clock, Target } from 'lucide-react';
 import { useGameStore } from '@/store/useGameStore';
-import { MODE_CONFIG } from '@/types/game';
-import { calculateStats } from '@/utils/stats';
+import { MODES } from '@/engine';
 
 export default function StatsCard() {
   const { history, clearHistory } = useGameStore();
   const hasHistory = history.totalTests > 0;
-  const stats = hasHistory ? calculateStats(history.allResults.slice(-20).map(r => r.time)) : null;
+  const recent = history.recentStats;
 
   return (
     <div className="w-full max-w-4xl mx-auto">
@@ -42,7 +41,7 @@ export default function StatsCard() {
                 icon={<Zap className="w-5 h-5" />}
                 label="最佳成绩"
                 value={history.bestTime === Infinity ? '--' : `${history.bestTime} ms`}
-                subtext={history.bestTime === Infinity ? '' : MODE_CONFIG[history.bestMode].name}
+                subtext={history.bestTime === Infinity ? '' : MODES[history.bestMode].name}
                 color="text-green-400"
               />
               <StatItem
@@ -53,14 +52,14 @@ export default function StatsCard() {
               />
               <StatItem
                 icon={<Clock className="w-5 h-5" />}
-                label="平均反应"
-                value={stats ? `${stats.average} ms` : '--'}
+                label="最近平均"
+                value={recent ? `${recent.average} ms` : '--'}
                 color="text-purple-400"
               />
               <StatItem
                 icon={<Trophy className="w-5 h-5" />}
                 label="最近最快"
-                value={stats ? `${stats.fastest} ms` : '--'}
+                value={recent ? `${recent.fastest} ms` : '--'}
                 color="text-yellow-400"
               />
             </div>
@@ -80,7 +79,7 @@ export default function StatsCard() {
                     >
                       {result.time}ms
                       <span className="text-xs text-white/40 ml-1">
-                        {MODE_CONFIG[result.mode].icon}
+                        {MODES[result.mode].icon}
                       </span>
                     </div>
                   ))}
@@ -88,10 +87,10 @@ export default function StatsCard() {
               </div>
             )}
 
-            {stats && history.allResults.length >= 5 && (
+            {recent && history.allResults.length >= 5 && (
               <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10">
-                <h3 className="text-white/70 text-sm mb-3">成绩分布</h3>
-                <MiniChart data={history.allResults.slice(-20).map(r => r.time)} />
+                <h3 className="text-white/70 text-sm mb-3">成绩分布（最近 {recent.count} 次）</h3>
+                <MiniChart data={history.allResults.slice(-recent.count).map((r) => r.time)} />
               </div>
             )}
           </div>
@@ -118,7 +117,10 @@ function StatItem({
     <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
       <div className={`${color} mb-2`}>{icon}</div>
       <p className="text-white/50 text-xs mb-1">{label}</p>
-      <p className={`text-xl font-bold ${color}`} style={{ fontFamily: "'Orbitron', sans-serif" }}>
+      <p
+        className={`text-xl font-bold ${color}`}
+        style={{ fontFamily: "'Orbitron', sans-serif" }}
+      >
         {value}
       </p>
       {subtext && <p className="text-white/30 text-xs mt-1">{subtext}</p>}
@@ -150,8 +152,8 @@ function MiniChart({ data }: { data: number[] }) {
               background: isMin
                 ? 'linear-gradient(to top, #00ff88, #00ffcc)'
                 : isMax
-                ? 'linear-gradient(to top, #ff2d55, #ff6b6b)'
-                : 'linear-gradient(to top, #00d4ff, #a855f7)'
+                  ? 'linear-gradient(to top, #ff2d55, #ff6b6b)'
+                  : 'linear-gradient(to top, #00d4ff, #a855f7)'
             }}
             title={`${value}ms`}
           />

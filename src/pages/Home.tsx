@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import ModeSelector from '@/components/ModeSelector';
 import GameArea from '@/components/GameArea';
 import StatsCard from '@/components/StatsCard';
@@ -6,11 +5,7 @@ import FeedbackPanel from '@/components/FeedbackPanel';
 import { useGameStore } from '@/store/useGameStore';
 
 export default function Home() {
-  const { loadHistory, gameState } = useGameStore();
-
-  useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+  const { phase } = useGameStore();
 
   return (
     <div className="min-h-screen py-8 px-4">
@@ -29,7 +24,7 @@ export default function Home() {
 
         <GameArea />
 
-        {gameState === 'result' && <FeedbackPanel />}
+        {phase === 'result' && <FeedbackPanel />}
 
         <StatsCard />
 
